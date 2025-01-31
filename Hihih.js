@@ -1,10 +1,4 @@
-// YouTube Ad Blocker & Performance Optimization Script for Shadowrocket
-// Created by: anhtrangdz
-
-const config = {
-    enableDebug: false,
-    scriptEngine: "jsc",
-};
+// YouTube Ad Blocker - Enhanced Version
 
 const url = $request.url;
 
@@ -16,30 +10,32 @@ if (url.includes("youtubei.googleapis.com/youtubei/v1/player")) {
         "adPlacements", "playerAds", "midroll", "overlay", "endScreen",
         "paidContentOverlay", "adServingData", "promotedContent", "adSlots",
         "adCues", "bumper", "preloadAd", "cards", "adBreakParams", "adSignals",
-        "adSurvey", "annotations", "microformat", "paidContent", "adPreview"
+        "adSurvey", "annotations", "microformat", "paidContent", "adPreview",
+        "adDetails", "sponsorAds"
     ];
     adKeys.forEach(key => { if (response[key]) delete response[key]; });
 
-    // 🔹 Tối ưu chất lượng âm thanh lên mức cao nhất
-    if (response.streamingData?.formats) {
-        response.streamingData.formats.forEach(format => {
-            format.audioQuality = "high";
-        });
+    // 🔥 Chặn các quảng cáo ẩn mà chưa hiển thị (preload)
+    if (response.hasOwnProperty("preloadAd")) {
+        delete response.preloadAd;
     }
 
-    // 🔹 Giảm tải dữ liệu không cần thiết để tăng tốc độ load video
-    delete response.streamingData?.dash;
-    delete response.streamingData?.hls;
+    // 🔹 Tối ưu âm thanh và video
+    response.streamingData?.formats?.forEach(format => {
+        if (format.audioQuality !== "high") {
+            format.audioQuality = "high";  // Tăng chất lượng âm thanh
+        }
+    });
 
-    // 🔥 Xóa các thông tin nhận diện để bảo mật và tránh bị phát hiện
-    ["videoDetails", "playerConfig", "adServingData", "trackingParams"].forEach(key => {
+    // 🔥 Xóa các thông tin không cần thiết
+    ["videoDetails", "playerConfig", "adServingData", "trackingParams", "microformat"].forEach(key => {
         delete response[key];
     });
 
     $done({ body: JSON.stringify(response) });
 }
 
-// Chặn quảng cáo trên API "next" (video tiếp theo)
+// Chặn quảng cáo video tiếp theo
 else if (url.includes("youtubei.googleapis.com/youtubei/v1/next")) {
     let response = JSON.parse($response.body);
 
@@ -48,17 +44,17 @@ else if (url.includes("youtubei.googleapis.com/youtubei/v1/next")) {
         if (response[key]) delete response[key];
     });
 
-    // 🔥 Giảm tải dữ liệu không cần thiết để tăng tốc độ load video
+    // 🔥 Giảm tải dữ liệu không cần thiết
     delete response.responseContext?.adSignalsInfo;
 
     $done({ body: JSON.stringify(response) });
 }
 
-// Chặn quảng cáo trên giao diện duyệt video
+// Chặn quảng cáo khi duyệt video
 else if (url.includes("youtubei.googleapis.com/youtubei/v1/browse")) {
     let response = JSON.parse($response.body);
 
-    // 🔥 Chặn quảng cáo xuất hiện trên giao diện duyệt video
+    // 🔥 Chặn quảng cáo trong giao diện duyệt video
     if (response.contents) {
         delete response.contents.promotedContent;
     }
