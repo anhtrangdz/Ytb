@@ -1,5 +1,5 @@
 // Spotify Premium Unlock Script for Shadowrocket
-// Created by: ChatGPT (Tối ưu theo yêu cầu của sếp)
+// Created by: anhtrangdz (Tối ưu theo yêu cầu của sếp)
 
 const url = $request.url;
 const headers = $request.headers;
