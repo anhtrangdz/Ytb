@@ -3,29 +3,59 @@ const url = $request.url;
 try {
     let response = JSON.parse($response.body);
 
-    if (url.includes("youtubei.googleapis.com/youtubei/v1/player")) {
-        // 🔹 Loại bỏ tất cả quảng cáo trong video
+    if (url.includes("youtubei.googleapis.com/")) {
+        // 🔹 Xóa tất cả các quảng cáo xuất hiện trên YouTube
         const adKeys = [
             "adPlacements", "playerAds", "midroll", "overlay", "endScreen",
             "paidContentOverlay", "adBreakParams", "adSignals", "adSurvey",
-            "adServingData", "promotedContent", "cards", "bumper"
+            "adServingData", "promotedContent", "cards", "bumper", "adSlots",
+            "inVideoPromotion", "promoConfig", "playerOverlay"
         ];
         adKeys.forEach(key => delete response[key]);
 
-        // 🔹 Xóa các đoạn quảng cáo trong video
-        if (response.adPlacements) response.adPlacements = [];
-        if (response.playerAds) response.playerAds = [];
-
-        // 🔹 Ngăn YouTube tải thêm quảng cáo
+        // 🔹 Đảm bảo xóa quảng cáo ngay từ gốc
         response.adPlacements = [];
         response.playerAds = [];
         response.adBreakParams = {};
         response.adSignals = {};
+        response.adServingData = {};
+        response.promoConfig = {};
 
-        // 🔹 Tăng chất lượng video & âm thanh
+        // 🔹 Ngăn quảng cáo xuất hiện khi mở app
+        if (url.includes("/v1/player") || url.includes("/v1/watch")) {
+            response.adPlacements = [];
+            response.playerAds = [];
+            response.adBreakParams = {};
+            response.adSignals = {};
+        }
+
+        // 🔹 Chặn quảng cáo trong danh sách phát & trang chủ
+        if (url.includes("/v1/next") || url.includes("/v1/browse")) {
+            ["adPlacements", "playerAds", "promotedContent"].forEach(key => delete response[key]);
+            if (response.contents) {
+                delete response.contents.promotedContent;
+            }
+        }
+
+        // 🔹 Chặn quảng cáo trong thanh bên & đề xuất
+        if (url.includes("/v1/guide")) {
+            if (response.items) {
+                response.items = response.items.filter(item => !item.hasOwnProperty("adSlotRenderer"));
+            }
+        }
+
+        // 🔹 Giữ lại đề xuất hợp lý, tránh YouTube hiển thị nội dung sai lệch
+        if (!response.contents) {
+            response.contents = { "safe-placeholder": true };
+        }
+
+        // 🔹 Tăng chất lượng âm thanh & video tối đa
         if (response.streamingData?.formats) {
             response.streamingData.formats.forEach(format => {
                 format.audioQuality = "high";
+                if (format.hasOwnProperty("drmFamilies")) {
+                    delete format.drmFamilies; // Tránh hạn chế DRM
+                }
             });
         }
 
@@ -34,33 +64,6 @@ try {
         safeTrackingKeys.forEach(key => {
             if (!response[key]) response[key] = "safe-placeholder";
         });
-
-        // 🔹 Xóa thông tin quảng cáo trong videoDetails
-        if (response.videoDetails) {
-            delete response.videoDetails.adPlacements;
-            delete response.videoDetails.isLive;
-        }
-
-    } else if (url.includes("youtubei.googleapis.com/youtubei/v1/next")) {
-        // 🔹 Xóa quảng cáo trong danh sách video kế tiếp
-        ["adPlacements", "playerAds", "promotedContent"].forEach(key => delete response[key]);
-
-        // 🔹 Tránh đề xuất nội dung bừa bãi
-        if (!response.contents) {
-            response.contents = { "safe-placeholder": true };
-        }
-
-    } else if (url.includes("youtubei.googleapis.com/youtubei/v1/browse")) {
-        // 🔹 Xóa quảng cáo nhưng giữ lại nội dung trang chủ YouTube
-        if (response.contents) {
-            delete response.contents.promotedContent;
-        }
-
-    } else if (url.includes("youtubei.googleapis.com/youtubei/v1/guide")) {
-        // 🔹 Xóa quảng cáo trong thanh bên YouTube
-        if (response.items) {
-            response.items = response.items.filter(item => !item.hasOwnProperty("adSlotRenderer"));
-        }
     }
 
     $done({ body: JSON.stringify(response) });
