@@ -1,65 +1,67 @@
-// YouTube Ad Blocker, Audio Optimization, and Load Speed Optimization for Shadowrocket
-// Created by: anhtrangdz
-
 const url = $request.url;
 
 if (url.includes("youtubei.googleapis.com/youtubei/v1/player")) {
     let response = JSON.parse($response.body);
 
-    // 🔥 Chặn tất cả các quảng cáo
-    if (response.hasOwnProperty("adPlacements")) {
-        response.adPlacements = [];
-    }
+    // 🔹 Chặn quảng cáo (trước, giữa, sau video, khi tua, banner, overlay)
+    const adKeys = [
+        "adPlacements", "playerAds", "midroll", "overlay", "endScreen",
+        "paidContentOverlay", "adBreakParams", "adSignals", "adSurvey",
+        "adServingData", "promotedContent"
+    ];
+    adKeys.forEach(key => { if (response[key]) delete response[key]; });
 
-    if (response.hasOwnProperty("playerAds")) {
-        response.playerAds = [];
-    }
+    // 🔹 Giữ lại tracking cơ bản để tránh hiển thị đề xuất vớ vẩn
+    const safeTrackingKeys = ["trackingParams", "eventId"];
+    safeTrackingKeys.forEach(key => { if (!response[key]) response[key] = "safe-placeholder"; });
 
-    // 🔥 Chặn các quảng cáo giữa video (midroll)
-    if (response.hasOwnProperty("midroll")) {
-        response.midroll = [];
-    }
-
-    // 🔥 Chặn preload ads (quảng cáo tải trước nhưng chưa hiển thị)
-    if (response.hasOwnProperty("preloadAd")) {
-        delete response.preloadAd;
-    }
-
-    // 🔥 Tối ưu âm thanh
-    if (response.hasOwnProperty("streamingData")) {
-        response.streamingData.formats.forEach(format => {
-            if (format.hasOwnProperty("audioQuality")) {
-                // Tối ưu âm thanh ở chất lượng cao nhất có thể
-                format.audioQuality = "high"; 
-            }
-        });
-    }
-
-    // 🔥 Tối ưu tốc độ tải video - Giảm tải dữ liệu không cần thiết
-    if (response.hasOwnProperty("videoDetails")) {
-        delete response.videoDetails;
-    }
-
+    // 🔹 Chặn quảng cáo trong UI (các banner đề xuất)
     if (response.hasOwnProperty("playerConfig")) {
-        delete response.playerConfig;
+        delete response.playerConfig.adBreakConfig;
     }
 
-    if (response.hasOwnProperty("adServingData")) {
-        delete response.adServingData;
+    // 🔹 Tối ưu chất lượng âm thanh
+    response.streamingData?.formats?.forEach(format => {
+        format.audioQuality = "high";
+    });
+
+    // 🔹 Giữ lại videoDetails nhưng loại bỏ thông tin không cần thiết
+    if (response.hasOwnProperty("videoDetails")) {
+        delete response.videoDetails.isLive;
+        delete response.videoDetails.adPlacements;
     }
 
-    // 🔥 Giảm bớt dữ liệu liên quan đến đề xuất video
-    if (response.hasOwnProperty("contents")) {
-        delete response.contents;
-    }
-
-    // 🔥 Giảm bớt các trường không cần thiết trong phản hồi để tăng tốc độ tải video
-    if (response.hasOwnProperty("responseContext")) {
-        delete response.responseContext.adSignalsInfo;
-    }
-
-    // 🔥 Gửi phản hồi đã chỉnh sửa
+    // 🔹 KHÔNG xóa `microformat` để tránh YouTube hiển thị đề xuất lung tung
     $done({ body: JSON.stringify(response) });
-} else {
+}
+
+// 🔹 Chặn quảng cáo nhưng giữ lại đề xuất trong API "next"
+else if (url.includes("youtubei.googleapis.com/youtubei/v1/next")) {
+    let response = JSON.parse($response.body);
+    ["adPlacements", "playerAds", "promotedContent"].forEach(key => {
+        if (response[key]) delete response[key];
+    });
+
+    // 🔹 Giữ lại nội dung video được đề xuất để không hiển thị bừa bãi
+    if (!response.hasOwnProperty("contents")) {
+        response.contents = { "safe-placeholder": true };
+    }
+    
+    $done({ body: JSON.stringify(response) });
+}
+
+// 🔹 Chặn quảng cáo nhưng giữ lại trang chủ YouTube không bị lỗi
+else if (url.includes("youtubei.googleapis.com/youtubei/v1/browse")) {
+    let response = JSON.parse($response.body);
+    
+    // 🔹 Xóa quảng cáo nhưng giữ lại nội dung đề xuất
+    if (response.hasOwnProperty("contents")) {
+        delete response.contents.promotedContent;
+    }
+
+    $done({ body: JSON.stringify(response) });
+} 
+
+else {
     $done({});
 }
