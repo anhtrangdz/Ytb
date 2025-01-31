@@ -1,31 +1,20 @@
-// Spotify Premium Unlock Script for Shadowrocket
-// Kết hợp từ spotify-json.js và spotify-proto.js
-// Tính năng: Bỏ quảng cáo, mở khóa tua bài, bỏ shuffle, skip không giới hạn
-
-const url = $request.url;
+// Đọc dữ liệu phản hồi từ Spotify API
 let response = JSON.parse($response.body);
 
-if (url.includes("spclient.wg.spotify.com/artistview/v1/artist") || url.includes("album-entity-view/v2/album")) {
-    // Giả lập thiết bị iPad
-    let modifiedUrl = url.replace(/platform=iphone/, 'platform=ipad');
-    $done({ url: modifiedUrl });
+// Kiểm tra nếu có trường "restrictions" và loại bỏ mọi giới hạn
+if (response && response.restrictions) {
+    response.restrictions = {};  // Xóa mọi giới hạn skip
 }
 
-else if (url.includes("spclient.wg.spotify.com/bootstrap/v1/bootstrap") || url.includes("user-customization-service/v1/customize")) {
-    // Can thiệp vào giao thức để bật tính năng Premium
-    if (response.hasOwnProperty("actions")) {
-        response.actions.disallows = {};
-    }
-    if (response.hasOwnProperty("account") && response.account.hasOwnProperty("type")) {
-        response.account.type = "premium";
-    }
-    if (response.hasOwnProperty("user")) {
-        response.user.premium = true;
-    }
-    $done({ body: JSON.stringify(response) });
+// Giả mạo pre-fetch để mở khóa tính năng
+if (response && response.feature_restrictions) {
+    response.feature_restrictions = {};  // Xóa mọi giới hạn tính năng
 }
 
-else {
-    $done({});
+// Giả mạo quyền truy cập toàn bộ
+if (response && response.available_features) {
+    response.available_features = ["skip", "premium", "ads-free", "offline", "high_quality"];  // Thêm quyền truy cập đầy đủ
 }
-p
+
+// Đảm bảo trả về dữ liệu đã được sửa
+$done({ body: JSON.stringify(response) });
