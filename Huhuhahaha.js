@@ -4,64 +4,60 @@ try {
     let response = JSON.parse($response.body);
 
     if (url.includes("youtubei.googleapis.com/")) {
-        // 🔹 Xóa tất cả các quảng cáo xuất hiện trên YouTube
+        // Xóa mọi dạng quảng cáo trong phản hồi API
         const adKeys = [
-            "adPlacements", "playerAds", "midroll", "overlay", "endScreen",
-            "paidContentOverlay", "adBreakParams", "adSignals", "adSurvey",
-            "adServingData", "promotedContent", "cards", "bumper", "adSlots",
+            "adPlacements", "playerAds", "promotedContent", "adBreakParams",
+            "adSignals", "adSurvey", "adServingData", "cards", "bumper",
             "inVideoPromotion", "promoConfig", "playerOverlay"
         ];
-        adKeys.forEach(key => delete response[key]);
+        adKeys.forEach(key => {
+            if (response.hasOwnProperty(key)) {
+                delete response[key];
+            }
+        });
 
-        // 🔹 Đảm bảo xóa quảng cáo ngay từ gốc
+        // Đảm bảo không còn dữ liệu quảng cáo nào
         response.adPlacements = [];
         response.playerAds = [];
-        response.adBreakParams = {};
-        response.adSignals = {};
         response.adServingData = {};
-        response.promoConfig = {};
 
-        // 🔹 Ngăn quảng cáo xuất hiện khi mở app
+        // Chặn quảng cáo khi mở ứng dụng
         if (url.includes("/v1/player") || url.includes("/v1/watch")) {
             response.adPlacements = [];
             response.playerAds = [];
-            response.adBreakParams = {};
-            response.adSignals = {};
         }
 
-        // 🔹 Chặn quảng cáo trong danh sách phát & trang chủ
+        // Chặn quảng cáo trong danh sách phát, trang chủ, đề xuất
         if (url.includes("/v1/next") || url.includes("/v1/browse")) {
-            ["adPlacements", "playerAds", "promotedContent"].forEach(key => delete response[key]);
             if (response.contents) {
                 delete response.contents.promotedContent;
             }
         }
 
-        // 🔹 Chặn quảng cáo trong thanh bên & đề xuất
+        // Chặn quảng cáo trong thanh bên
         if (url.includes("/v1/guide")) {
             if (response.items) {
                 response.items = response.items.filter(item => !item.hasOwnProperty("adSlotRenderer"));
             }
         }
 
-        // 🔹 Giữ lại đề xuất hợp lý, tránh YouTube hiển thị nội dung sai lệch
-        if (!response.contents) {
-            response.contents = { "safe-placeholder": true };
+        // Ngăn YouTube hiển thị quảng cáo trong lịch sử tìm kiếm
+        if (url.includes("/v1/search")) {
+            response.estimatedResults = "0";
         }
 
-        // 🔹 Tăng chất lượng âm thanh & video tối đa
+        // Tăng chất lượng âm thanh và video
         if (response.streamingData?.formats) {
             response.streamingData.formats.forEach(format => {
                 format.audioQuality = "high";
                 if (format.hasOwnProperty("drmFamilies")) {
-                    delete format.drmFamilies; // Tránh hạn chế DRM
+                    delete format.drmFamilies;
                 }
             });
         }
 
-        // 🔹 Giữ lại tracking cơ bản để tránh lỗi đề xuất
-        const safeTrackingKeys = ["trackingParams", "eventId"];
-        safeTrackingKeys.forEach(key => {
+        // Giữ lại tracking cơ bản để tránh lỗi đề xuất
+        ["trackingParams", "eventId"].forEach(key => {
             if (!response[key]) response[key] = "safe-placeholder";
         });
     }
@@ -69,6 +65,6 @@ try {
     $done({ body: JSON.stringify(response) });
 
 } catch (e) {
-    console.log("🔥 Lỗi chặn quảng cáo YouTube:", e);
+    console.log("Lỗi chặn quảng cáo YouTube:", e);
     $done({});
 }
