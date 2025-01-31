@@ -6,9 +6,13 @@ const removeAds = (response) => {
         "adPlacements", "playerAds", "midroll", "overlay", "endScreen",
         "paidContentOverlay", "adBreakParams", "adSignals", "adSurvey",
         "adServingData", "promotedContent", "adSlots", "adCues",
-        "annotations", "bumper", "preloadAd", "cards", "microformat"
+        "annotations", "bumper", "preloadAd", "cards", "microformat",
+        "adPreview", "adPreviewButton"
     ];
-    adKeys.forEach(key => { if (response[key]) delete response[key]; });
+
+    adKeys.forEach(key => { 
+        if (response[key]) delete response[key]; 
+    });
 
     // 🔥 Chặn quảng cáo khi tua video
     if (response.hasOwnProperty("playbackTracking")) {
