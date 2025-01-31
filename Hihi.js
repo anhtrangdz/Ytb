@@ -1,64 +1,59 @@
-const config = {
-    enableDebug: false,
-    scriptEngine: "jsc",
-};
-
 const url = $request.url;
 
 if (url.includes("youtubei.googleapis.com/youtubei/v1/player")) {
     let response = JSON.parse($response.body);
 
-    // Chặn tất cả quảng cáo (trước, giữa, sau, tua, pop-up)
-    response.adPlacements = [];
-    response.playerAds = [];
-    response.midroll = [];
-    response.overlay = [];
-    response.endScreen = [];
-    response.paidContentOverlay = [];
+    // 🔹 Xóa toàn bộ quảng cáo (trước, giữa, sau, tua, pop-up, banner, overlay)
+    const adKeys = [
+        "adPlacements", "playerAds", "midroll", "overlay", "endScreen", 
+        "paidContentOverlay", "adBreakParams", "adSignals", "adSurvey", 
+        "adServingData", "promotedContent"
+    ];
+    adKeys.forEach(key => { if (response[key]) delete response[key]; });
 
-    // Chặn các request quảng cáo khác nếu có
-    if (response.hasOwnProperty("adBreakParams")) {
-        delete response.adBreakParams;
-    }
-    if (response.hasOwnProperty("adSignals")) {
-        delete response.adSignals;
-    }
-    if (response.hasOwnProperty("adSurvey")) {
-        delete response.adSurvey;
+    // 🔹 Xóa tracking & theo dõi người dùng (tránh bị phát hiện)
+    const trackingKeys = ["playbackTracking", "annotations", "trackingParams", "eventId"];
+    trackingKeys.forEach(key => { if (response[key]) delete response[key]; });
+
+    // 🔹 Chặn quảng cáo trong UI (các banner đề xuất)
+    if (response.hasOwnProperty("playerConfig")) {
+        delete response.playerConfig.adBreakConfig;
     }
 
-    // Tối ưu chất lượng âm thanh
+    // 🔹 Tối ưu chất lượng âm thanh
     response.streamingData?.formats?.forEach(format => {
-        format.audioQuality = "high";  // Cài đặt âm thanh chất lượng cao
+        format.audioQuality = "high";
     });
 
-    // Xóa thông tin quảng cáo mà YouTube có thể sử dụng để hiển thị quảng cáo
-    delete response.adServingData;
-    delete response.playerConfig?.adBreakConfig;
-
-    // Giữ lại videoDetails nhưng xóa thông tin quảng cáo để tránh bị phát hiện
+    // 🔹 Giữ lại videoDetails nhưng loại bỏ thông tin không cần thiết
     if (response.hasOwnProperty("videoDetails")) {
         delete response.videoDetails.isLive;
         delete response.videoDetails.adPlacements;
+        delete response.videoDetails.microformat;
+    }
+
+    // 🔹 Tăng tốc độ phát mặc định (tự động phát nhanh hơn)
+    if (response.hasOwnProperty("playbackRate")) {
+        response.playbackRate = 1.25; // Mặc định tăng tốc 1.25x
     }
 
     $done({ body: JSON.stringify(response) });
 }
 
-// Giả mạo tài khoản Premium để thử bật PiP và phát nhạc nền
-else if (url.includes("youtubei.googleapis.com/youtubei/v1/account/get")) {
+// 🔹 Chặn API quảng cáo khác từ YouTube
+else if (url.includes("youtubei.googleapis.com/youtubei/v1/next")) {
     let response = JSON.parse($response.body);
-    if (response.account?.membership) {
-        response.account.membership.level = "Premium";
-    }
+    ["adPlacements", "playerAds", "promotedContent"].forEach(key => {
+        if (response[key]) delete response[key];
+    });
     $done({ body: JSON.stringify(response) });
 }
 
-// Giả mạo Premium để thử mở khóa PiP và Background Play
-else if (url.includes("youtubei.googleapis.com/youtubei/v1/player")) {
+// 🔹 Chặn API gợi ý quảng cáo trong Home & Search
+else if (url.includes("youtubei.googleapis.com/youtubei/v1/browse")) {
     let response = JSON.parse($response.body);
-    if (response.hasOwnProperty("playbackTracking")) {
-        response.playbackTracking.premium = true;
+    if (response.hasOwnProperty("contents")) {
+        delete response.contents.promotedContent;
     }
     $done({ body: JSON.stringify(response) });
 } 
@@ -66,3 +61,4 @@ else if (url.includes("youtubei.googleapis.com/youtubei/v1/player")) {
 else {
     $done({});
 }
+
