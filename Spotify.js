@@ -1,37 +1,31 @@
-// Spotify Ultimate Script for Shadowrocket
-// Tích hợp bỏ giới hạn, tua bài, chặn quảng cáo, tắt shuffle, bật chất lượng cao
-// Created by: anhtrangdz (Dựa trên script gốc nhưng mạnh hơn)
+// Spotify Premium Unlock Script for Shadowrocket
+// Kết hợp từ spotify-json.js và spotify-proto.js
+// Tính năng: Bỏ quảng cáo, mở khóa tua bài, bỏ shuffle, skip không giới hạn
 
 const url = $request.url;
-const headers = $request.headers;
 let response = JSON.parse($response.body);
 
-if (url.includes("api.spotify.com/v1/ads")) {
-    // 🔥 Chặn quảng cáo Spotify
-    $done({ body: JSON.stringify({}) });
-} 
-else if (url.includes("api.spotify.com/v1/me/player")) {
-    // 🔥 Bỏ giới hạn skip bài và tua bài
+if (url.includes("spclient.wg.spotify.com/artistview/v1/artist") || url.includes("album-entity-view/v2/album")) {
+    // Giả lập thiết bị iPad
+    let modifiedUrl = url.replace(/platform=iphone/, 'platform=ipad');
+    $done({ url: modifiedUrl });
+}
+
+else if (url.includes("spclient.wg.spotify.com/bootstrap/v1/bootstrap") || url.includes("user-customization-service/v1/customize")) {
+    // Can thiệp vào giao thức để bật tính năng Premium
     if (response.hasOwnProperty("actions")) {
         response.actions.disallows = {};
     }
-    // 🔥 Bật chất lượng âm thanh cao nhất
-    if (response.hasOwnProperty("playback_features")) {
-        response.playback_features.audio_quality = "HIGH";
+    if (response.hasOwnProperty("account") && response.account.hasOwnProperty("type")) {
+        response.account.type = "premium";
     }
-    $done({ body: JSON.stringify(response) });
-} 
-else if (url.includes("spclient.wg.spotify.com")) {
-    // 🔥 Fake Premium bằng cách chỉnh quyền user
     if (response.hasOwnProperty("user")) {
         response.user.premium = true;
-        response.user.product = "premium";
-    }
-    if (response.hasOwnProperty("account")) {
-        response.account.type = "premium";
     }
     $done({ body: JSON.stringify(response) });
 }
+
 else {
     $done({});
 }
+p
