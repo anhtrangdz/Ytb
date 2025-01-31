@@ -1,8 +1,8 @@
-// Spotify Ad Blocker, Unlimited Skip, Disable Shuffle & Seek Unlock for Shadowrocket
-// Created by: anhtrangdz (Modified)
+// 🚀 Spotify Premium Unlock Script for Shadowrocket 🚀
+// 🔥 Chặn quảng cáo, Bỏ giới hạn Skip, Tua bài, Tắt Shuffle
+// Created by: anhtrangdz (Optimized)
 
 const url = $request.url;
-const headers = $request.headers;
 let response = JSON.parse($response.body);
 
 if (url.includes("api.spotify.com/v1/ads")) {
@@ -10,12 +10,12 @@ if (url.includes("api.spotify.com/v1/ads")) {
     $done({ body: JSON.stringify({}) });
 } 
 else if (url.includes("api.spotify.com/v1/me/player")) {
-    // 🔥 Bỏ qua giới hạn skip bài
+    // 🔥 Mở khóa tất cả tính năng Premium
     if (response.hasOwnProperty("actions")) {
-        response.actions.disallows = {};
+        response.actions.disallows = {};  // Bỏ giới hạn skip
     }
 
-    // 🔥 Bật tua bài hát (seek forward/backward)
+    // 🔥 Cho phép tua bài hát (Seek Forward / Backward)
     if (response.hasOwnProperty("progress_ms")) {
         response.actions.disallows.seek = false;
     }
@@ -24,6 +24,10 @@ else if (url.includes("api.spotify.com/v1/me/player")) {
     if (response.hasOwnProperty("shuffle_state")) {
         response.shuffle_state = false;
     }
+
+    // 🔥 Bật Next / Previous Track
+    response.actions.disallows["skipping_prev"] = false;
+    response.actions.disallows["skipping_next"] = false;
 
     $done({ body: JSON.stringify(response) });
 } 
