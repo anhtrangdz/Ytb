@@ -1,59 +1,54 @@
-// YouTube Premium Unlock Script for Shadowrocket
+// YouTube Ad Blocker, Audio Optimization and Privacy Script for Shadowrocket
 // Created by: anhtrangdz
 
 const config = {
-    hideDownloadButton: true,
-    hideClipButton: true,
-    subtitleLanguage: "vi",
-    lyricsLanguage: "vi",
-    scriptEngine: "jsc",
     enableDebug: false,
+    scriptEngine: "jsc",
 };
 
 const url = $request.url;
-const method = $request.method;
 
 if (url.includes("youtubei.googleapis.com/youtubei/v1/player")) {
     let response = JSON.parse($response.body);
-    
-    // Chặn quảng cáo
+
+    // Chặn tất cả các quảng cáo
     if (response.hasOwnProperty("adPlacements")) {
         response.adPlacements = [];
     }
-    
-    // Chặn midroll ads (quảng cáo giữa video)
+
     if (response.hasOwnProperty("playerAds")) {
         response.playerAds = [];
     }
 
-    // Bật tính năng phát nền (background playback)
-    if (response.hasOwnProperty("playbackTracking")) {
-        response.playbackTracking = {}; // Giữ thông tin về tiến trình phát video
+    // Chặn các quảng cáo giữa video (midroll)
+    if (response.hasOwnProperty("midroll")) {
+        response.midroll = [];
     }
 
-    // Phát âm thanh trong nền (audio-only mode)
-    if (response.hasOwnProperty("playback")) {
-        response.playback.audioOnly = true;  // Cho phép phát âm thanh khi không có video
+    // Tối ưu âm thanh
+    if (response.hasOwnProperty("streamingData")) {
+        response.streamingData.formats.forEach(format => {
+            if (format.hasOwnProperty("audioQuality")) {
+                // Tối ưu âm thanh ở chất lượng cao nhất có thể
+                format.audioQuality = "high"; 
+            }
+        });
     }
 
-    // Bật chế độ Picture-in-Picture (PIP)
-    if (response.hasOwnProperty("playbackControls")) {
-        response.playbackControls.enablePip = true;  // Cho phép bật chế độ PIP
+    // Xóa hoặc ẩn bất kỳ thông tin nhận diện nào trong phản hồi để giảm khả năng bị phát hiện
+    if (response.hasOwnProperty("videoDetails")) {
+        delete response.videoDetails;
     }
 
-    // Tối ưu phụ đề và lời bài hát
-    if (config.subtitleLanguage !== "off") {
-        response.captions = {
-            language: config.subtitleLanguage
-        };
+    if (response.hasOwnProperty("playerConfig")) {
+        delete response.playerConfig;
     }
-    if (config.lyricsLanguage !== "off") {
-        response.lyrics = {
-            language: config.lyricsLanguage
-        };
+
+    if (response.hasOwnProperty("adServingData")) {
+        delete response.adServingData;
     }
-    
-    // Gửi phản hồi đã chỉnh sửa
+
+    // Gửi phản hồi đã chỉnh sửa mà không chứa thông tin nhận diện
     $done({ body: JSON.stringify(response) });
 } else {
     $done({});
