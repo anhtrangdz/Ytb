@@ -1,20 +1,23 @@
-// Đọc dữ liệu phản hồi từ Spotify API
+// Giả mạo dữ liệu phản hồi Spotify để mở khóa tính năng
 let response = JSON.parse($response.body);
 
-// Kiểm tra nếu có trường "restrictions" và loại bỏ mọi giới hạn
-if (response && response.restrictions) {
-    response.restrictions = {};  // Xóa mọi giới hạn skip
+// Giả mạo pre-fetch để bỏ qua giới hạn skip và mở khóa tính năng
+if (response && response.features) {
+    // Loại bỏ mọi giới hạn tính năng
+    response.features = {
+        "skip": true,
+        "premium": true,
+        "ads-free": true,
+        "offline": true,
+        "high_quality": true,
+    };
 }
 
-// Giả mạo pre-fetch để mở khóa tính năng
-if (response && response.feature_restrictions) {
-    response.feature_restrictions = {};  // Xóa mọi giới hạn tính năng
+// Giả mạo thông tin tài khoản để mở khóa đầy đủ tính năng
+if (response && response.account_info) {
+    response.account_info.subscription = "premium";
+    response.account_info.has_ads = false;
 }
 
-// Giả mạo quyền truy cập toàn bộ
-if (response && response.available_features) {
-    response.available_features = ["skip", "premium", "ads-free", "offline", "high_quality"];  // Thêm quyền truy cập đầy đủ
-}
-
-// Đảm bảo trả về dữ liệu đã được sửa
+// Đảm bảo trả về dữ liệu đã sửa đổi
 $done({ body: JSON.stringify(response) });
