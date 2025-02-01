@@ -1,42 +1,39 @@
 // ==UserScript==
-// @ScriptName      Advanced YouTube AdBlocker Improved
+// @ScriptName      Advanced YouTube AdBlocker Superior Plus
 // @Match           ^https?:\/\/(www\.)?youtube\.com\/.*
 // @Type            response
 // @Requires        mitm
 // @MITM            DOMAIN-SUFFIX,youtube.com
-// @Rule            URL-REGEX,^https?:\/\/(www\.)?youtube\.com\/(get_video_info|api|watch|ad),SCRIPT,advanced_yt_adblock_improved.js
+// @Rule            URL-REGEX,^https?:\/\/(www\.)?youtube\.com\/(get_video_info|api|watch|ad),SCRIPT,advanced_yt_adblock_superior_plus.js
 // ==/UserScript==
 
 /**
- * Advanced YouTube AdBlocker Improved
- * ----------------------------------
- * Phiên bản cải tiến dựa trên script cũ, bổ sung thêm một số xử lý nhằm tăng hiệu quả loại bỏ quảng cáo,
- * đặc biệt là quảng cáo hiển thị ngay khi bấm đầu video.
+ * Advanced YouTube AdBlocker Superior Plus
+ * -----------------------------------------
+ * Phiên bản nâng cao can thiệp sâu vào response của YouTube nhằm loại bỏ dữ liệu quảng cáo.
+ * Cải tiến gồm:
+ *  - Làm sạch đệ quy nhiều vòng cho đến khi không còn thay đổi (hoặc đạt giới hạn vòng lặp).
+ *  - Xử lý đặc thù cho streamingData và commands.
+ *  - Sử dụng danh sách key quảng cáo (keysToRemove) và danh sách key an toàn (safeKeys) để tránh xóa nhầm.
  *
- * Các thay đổi:
- * 1. Bổ sung thêm danh sách các key có khả năng chứa dữ liệu quảng cáo.
- * 2. Xử lý riêng phần playerResponse (nếu có) ngay sau khi parse JSON.
- * 3. Tăng cường đệ quy với khả năng loại bỏ object có key chứa "ad" (có điều kiện tránh xóa nhầm các key hợp lệ).
- * 4. Xử lý thêm trường hợp các mảng chứa các object quảng cáo lồng sâu.
- *
- * Lưu ý: Nếu có lỗi hoặc một số chức năng không hoạt động (ví dụ: chất lượng video, phụ đề, …),
- * bạn có thể cần phải tinh chỉnh lại danh sách các key bị xóa.
+ * Lưu ý: Script này chỉ can thiệp ở cấp độ JSON response và không thể tương tác trực tiếp với DOM.
  */
 
 (function() {
   let body = $response.body;
-  let response = {};
+  let responseData = {};
 
   // --- 1. Parse JSON ---
   try {
-    response = JSON.parse(body);
+    responseData = JSON.parse(body);
   } catch (e) {
     console.log("Error parsing JSON: " + e);
     $done({ body });
     return;
   }
 
-  // --- 2. Danh sách các key cần loại bỏ hoàn toàn ---
+  // --- 2. Cấu hình danh sách key cần loại bỏ và danh sách key an toàn ---
+  // Danh sách key được biết là chứa dữ liệu quảng cáo
   const keysToRemove = [
     "adPlacements",
     "adSlots",
@@ -47,90 +44,84 @@
     "adIsRewarded",
     "adCueParams",
     "adSignals",
-    "adDebugInfo",          // Một số phiên bản mới có thể dùng key này
-    "adServingData",        // Dữ liệu phục vụ quảng cáo
+    "adDebugInfo",
+    "adServingData",
     "adBreaks",
     "adCommands",
     "adPositions"
   ];
 
-  // --- 3. Hàm kiểm tra object có dấu hiệu quảng cáo theo key ---
-  // Điều kiện: Nếu object chứa trực tiếp key "adInfoRenderer" hoặc "adRenderer"
-  function isAdObject(obj) {
-    if (obj && typeof obj === 'object') {
-      const adIndicators = ["adInfoRenderer", "adRenderer"];
-      for (const indicator of adIndicators) {
-        if (obj.hasOwnProperty(indicator)) return true;
-      }
-    }
-    return false;
-  }
+  // Danh sách các key an toàn, mặc dù chứa chữ "ad" nhưng không phải quảng cáo
+  const safeKeys = ["adaptation", "additionalData", "address", "media", "adsConfig"];
 
-  // --- 4. Hàm xử lý đệ quy: deepClean ---
-  // Ngoài việc loại bỏ key cố định, hàm còn xử lý các object có key chứa chuỗi "ad" nếu
-  // không phải là những key an toàn (ví dụ: "adaptation" hay "additionalData")
+  // --- 3. Hàm làm sạch đệ quy (deepClean) ---
+  // Hàm này sẽ duyệt qua toàn bộ đối tượng, xóa bỏ các key liên quan đến quảng cáo
   function deepClean(data) {
     if (Array.isArray(data)) {
-      // Với mảng: Lọc các phần tử rõ ràng chứa quảng cáo và đệ quy xử lý các phần tử còn lại
       return data
+        .map(item => deepClean(item))
         .filter(item => {
-          if (isAdObject(item)) return false;
-          return true;
-        })
-        .map(item => deepClean(item));
-    } else if (data !== null && typeof data === 'object') {
-      for (const key in data) {
-        // Nếu key nằm trong danh sách cần loại bỏ thì xóa
-        if (keysToRemove.indexOf(key) > -1) {
-          delete data[key];
-        }
-        // Nếu key chứa "ad" (theo dạng viết thường) và không nằm trong danh sách loại trừ an toàn,
-        // có thể là dữ liệu quảng cáo – tuy nhiên, cần tránh xóa các key như "adaptation"...
-        else if (/ad/i.test(key) &&
-                 // Danh sách key an toàn không nên xóa
-                 ["adaptation", "additionalData", "address"].indexOf(key.toLowerCase()) === -1) {
-          // Nếu giá trị của key này là object hoặc mảng thì đệ quy xử lý
-          data[key] = deepClean(data[key]);
-          // Nếu sau khi đệ quy, object rỗng hoặc mảng rỗng thì có thể xóa key luôn
-          if (
-            (typeof data[key] === 'object' && data[key] !== null && Object.keys(data[key]).length === 0) ||
-            (Array.isArray(data[key]) && data[key].length === 0)
-          ) {
-            delete data[key];
+          // Loại bỏ các phần tử rỗng (object hoặc mảng không có nội dung)
+          if (item && typeof item === "object") {
+            return Object.keys(item).length > 0;
           }
-        } else {
-          // Nếu không phải các trường đặc biệt thì tiếp tục đệ quy
-          data[key] = deepClean(data[key]);
+          return item !== null && item !== undefined;
+        });
+    } else if (data !== null && typeof data === "object") {
+      for (const key in data) {
+        // Nếu key nằm trong danh sách cần loại bỏ, xóa luôn
+        if (keysToRemove.includes(key)) {
+          delete data[key];
+          continue;
+        }
+        // Nếu key chứa chữ "ad" (không phân biệt hoa thường) nhưng không thuộc safeKeys thì xóa
+        if (/ad/i.test(key) && safeKeys.indexOf(key.toLowerCase()) === -1) {
+          delete data[key];
+          continue;
+        }
+        // Đệ quy xử lý giá trị của key
+        data[key] = deepClean(data[key]);
+        // Nếu sau khi làm sạch giá trị trở nên rỗng, xóa key đó
+        if (
+          (typeof data[key] === "object" && data[key] !== null && Object.keys(data[key]).length === 0) ||
+          (Array.isArray(data[key]) && data[key].length === 0)
+        ) {
+          delete data[key];
         }
       }
       return data;
-    } else {
-      // Với giá trị nguyên thủy, trả về như cũ
-      return data;
+    }
+    return data;
+  }
+
+  // --- 4. Làm sạch nhiều vòng cho đến khi không có thay đổi (hoặc đạt giới hạn vòng lặp) ---
+  const maxIterations = 5;
+  let iteration = 0;
+  let cleanedData = responseData;
+  while (iteration < maxIterations) {
+    const prevData = JSON.stringify(cleanedData);
+    cleanedData = deepClean(cleanedData);
+    const newData = JSON.stringify(cleanedData);
+    iteration++;
+    if (prevData === newData) {
+      console.log(`Đã đạt trạng thái ổn định sau ${iteration} vòng làm sạch.`);
+      break;
     }
   }
 
-  // --- 5. Xử lý đặc thù: playerResponse ---
-  // Một số phản hồi ban đầu chứa dữ liệu quảng cáo trong playerResponse
-  if (response.playerResponse) {
-    response.playerResponse = deepClean(response.playerResponse);
-  }
-
-  // --- 6. Xử lý đặc thù: Streaming Data ---
-  // Loại bỏ các tham số quảng cáo trong URL của streamingData.adaptiveFormats nếu có
-  if (response.streamingData && Array.isArray(response.streamingData.adaptiveFormats)) {
-    response.streamingData.adaptiveFormats.forEach(format => {
+  // --- 5. Xử lý đặc thù: Streaming Data ---
+  if (cleanedData.streamingData && Array.isArray(cleanedData.streamingData.adaptiveFormats)) {
+    cleanedData.streamingData.adaptiveFormats.forEach(format => {
       if (format.url) {
-        // Loại bỏ các tham số quảng cáo dạng &oad=...
+        // Loại bỏ các tham số quảng cáo dạng &oad=... trong URL
         format.url = format.url.replace(/&oad=[^&]*/g, "");
       }
     });
   }
 
-  // --- 7. Xử lý đặc thù: Commands ---
-  // Loại bỏ các lệnh chứa "ad" trong signal (các lệnh quảng cáo)
-  if (Array.isArray(response.commands)) {
-    response.commands = response.commands.filter(cmd => {
+  // --- 6. Xử lý đặc thù: Commands ---
+  if (Array.isArray(cleanedData.commands)) {
+    cleanedData.commands = cleanedData.commands.filter(cmd => {
       if (cmd.signalServiceEndpoint && cmd.signalServiceEndpoint.signal) {
         return !cmd.signalServiceEndpoint.signal.toLowerCase().includes("ad");
       }
@@ -138,9 +129,6 @@
     });
   }
 
-  // --- 8. Thực hiện quét đệ quy toàn bộ JSON ---
-  response = deepClean(response);
-
-  // --- 9. Trả về JSON đã xử lý ---
-  $done({ body: JSON.stringify(response) });
+  // --- 7. Trả về JSON đã làm sạch ---
+  $done({ body: JSON.stringify(cleanedData) });
 })();
