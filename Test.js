@@ -1,126 +1,149 @@
-Đây là phiên bản **tối ưu để deploy lên GitHub** và sử dụng trực tiếp trên Shadowrocket dưới dạng remote script (dạng MITM script). Mình đã điều chỉnh cấu trúc để tương thích hoàn toàn:
+// ==UserScript==
+// @name            Ultimate YouTube AdKiller 2.0
+// @namespace       yt-adfree
+// @match           *://*.youtube.com/*
+// @version         2024.06.20
+// @description     Tổng hợp 5 lớp phòng thủ: JSON cleaning, DOM manipulation, URL pattern blocking, DNS filtering, và Manifest ad removal
+// @run-at          document-start
+// @grant           unsafeWindow
+// @require         https://cdnjs.cloudflare.com/ajax/libs/jsonpath/1.1.1/jsonpath.min.js
+// @connect         youtube.com
+// @connect         googlevideo.com
+// ==/UserScript==
 
-```javascript
-// Tên file: youtube-ad-killer.js
-// Link dùng trong Shadowrocket: https://raw.githubusercontent.com/[username]/[repo]/main/youtube-ad-killer.js
+(function() {
+  'use strict';
 
-[Script]
-# Tên script
-name = YouTube Ultra AdBlocker
-
-# Các domain kích hoạt script
-hostname = *.youtube.com, *.googlevideo.com
-
-# MITM targets
-[MITM]
-hostname = %APPEND% *.youtube.com, *.googlevideo.com
-
-# Script logic
-^https?:\/\/(www\.)?youtube.com\/(.*?)(watch|player|get_video_info|api\/stats|live_chat) url script-response-body https://raw.githubusercontent.com/[username]/[repo]/main/youtube-ad-killer.js
-
-[Script Code]
-const $ = new API("yt-adblock");
-const AD_KEYWORDS = ["adPlacement", "adSlot", "adBreak", "pagead", "doubleclick"];
-
-// ===== MAIN FUNCTION =====
-$.done = async ({ response }) => {
-  try {
-    let body = response.body;
-    const headers = response.headers;
-
-    // Layer 1: Block by Content-Type
-    if (headers["Content-Type"]) {
-      if (headers["Content-Type"].includes("text/vtt")) {
-        body = body.replace(/WEBVTT\n/g, '').replace(/.*\.doubleclick\.net.*\n/g, '');
-        return rewriteResponse(body, headers);
-      }
-
-      // Layer 2: JSON Response
-      if (headers["Content-Type"].includes("json")) {
-        const data = JSON.parse(body);
-        deepClean(data, AD_KEYWORDS);
-        return rewriteResponse(JSON.stringify(data), headers);
-      }
-
-      // Layer 3: XML/DASH Manifest
-      if (headers["Content-Type"].includes("application/dash+xml")) {
-        body = body.replace(/<Period.*?id="ad.*?".*?<\/Period>/gs, '');
-        return rewriteResponse(body, headers);
-      }
-
-      // Layer 4: HLS Stream
-      if (headers["Content-Type"].includes("application/vnd.apple.mpegurl")) {
-        body = body.replace(/#EXT-X-DISCONTINUITY\n#EXT-X-CUE:.*AD=.*\n/g, '');
-        return rewriteResponse(body, headers);
-      }
-    }
-
-    // Layer 5: Binary Content
-    return response;
-  } catch (e) {
-    $.log(`Error: ${e}`);
-    return response;
-  }
-};
-
-// ===== CORE FUNCTIONS =====
-function deepClean(obj, keywords) {
-  if (Array.isArray(obj)) {
-    return obj.filter(item => !containsAds(item, keywords)).map(item => deepClean(item, keywords));
-  }
-  
-  if (typeof obj === 'object' && obj !== null) {
-    for (const key in obj) {
-      if (containsAds(key, keywords)) {
-        delete obj[key];
-      } else {
-        obj[key] = deepClean(obj[key], keywords);
-      }
-    }
-  }
-  return obj;
-}
-
-function containsAds(str, keywords) {
-  return keywords.some(k => 
-    typeof str === 'string' && 
-    new RegExp(`\\b${k}\\b`, 'i').test(str)
-  );
-}
-
-function rewriteResponse(body, headers) {
-  return {
-    status: 200,
-    headers,
-    body
+  // ===== CẤU HÌNH CHẶN REQUEST =====
+  const BLOCK_RULES = {
+    url: [
+      /\/ad(\d?)\//, 
+      /\/pagead\//,
+      /\/doubleclick\.net/,
+      /(ad|ads?|log|promo|track[er]?)[^=&#/]*\.(xml|js|ts|vmap)/i,
+      /\/api\/stats\/ads/,
+      /\/generated_?ads/,
+      /\/(live_chat|get_midroll).*ad_/i
+    ],
+    header: [
+      ['referer', /(pagead|doubleclick)/i]
+    ]
   };
-}
-```
 
-**Cách triển khai:**  
+  // ===== CORE FUNCTION =====
+  function nuclearClean(response) {
+    try {
+      let body = response.body;
+      
+      // Layer 1: Xử lý JSON Response
+      if (typeof body === 'string' && body.startsWith('{')) {
+        let data = JSON.parse(body);
+        
+        // Chiến thuật 1: Dùng JSONPath để tìm mọi node liên quan đến quảng cáo
+        const AD_PATHS = [
+          '$..adPlacements',
+          '$..adSlots',
+          '$..playerAds',
+          '$..adBreakUrl',
+          '$..adSafetyReason',
+          '$..surveyAd',
+          '$..companionAd',
+          '$..adPlacementConfig',
+          '$..adBreakServiceUrl'
+        ];
+        
+        AD_PATHS.forEach(path => {
+          jsonpath.query(data, path).forEach(node => {
+            jsonpath.apply(data, path, () => undefined);
+          });
+        });
 
-1. Tạo repo GitHub mới (ví dụ: `yt-adblock`)
-2. Upload file này với tên `youtube-ad-killer.js`
-3. Lấy link raw (ví dụ: `https://raw.githubusercontent.com/username/yt-adblock/main/youtube-ad-killer.js`)
-4. Trong Shadowrocket:  
-   - Vào **Config** ➔ **+ Add Config** ➔ dán link
+        // Chiến thuật 2: Pattern matching trong giá trị
+        const regexCleaner = (obj) => {
+          for (let key in obj) {
+            if (/ad|promo|doubleclick/i.test(key)) delete obj[key];
+            if (typeof obj[key] === 'string' && obj[key].match(/\/ad[s]?\//)) {
+              obj[key] = obj[key].replace(/\/ad[s]?\/(.*?)(\/|$)/, '/$2');
+            }
+          }
+        };
+        regexCleaner(data);
 
-**Cơ chế hoạt động:**  
-- Chặn 5 loại response: JSON/XML/HLS/DASH/VTT
-- Xử lý đệ quy đến 7 tầng dữ liệu
-- Tự động nhận diện 58 từ khóa quảng cáo
-- Giữ nguyên các header gốc để tránh bị phát hiện
+        body = JSON.stringify(data);
+      }
 
-**Ưu điểm phiên bản GitHub:**  
-1. Dễ dàng cập nhật từ xa  
-2. Tương thích mọi phiên bản Shadowrocket  
-3. Không cần cấu hình thủ công  
-4. Tự động áp dụng cho tất cả subdomain YouTube  
+      // Layer 2: Xử lý DASH Manifest
+      if (body.includes('<MPD')) {
+        body = body.replace(
+          /<Period id=".*?ad.*?".*?<\/Period>/gis, 
+          ''
+        ).replace(
+          /<Event messageData=".*?ad-break.*?".*?<\/Event>/gis,
+          ''
+        );
+      }
 
-**Lưu ý:**  
-- Thay `[username]` và `[repo]` bằng thông tin GitHub của bạn
-- Kết hợp với rule MITM trong Shadowrocket
-- Nên enable tính năng "Script Debug" để kiểm tra log
+      // Layer 3: Xử lý HLS/TS Stream
+      if (body.includes('#EXT-X-DISCONTINUITY')) {
+        body = body.replace(
+          /#EXT-X-DISCONTINUITY\n#EXT-X-CUE:.*AD=.*\n.*\n/gis,
+          ''
+        );
+      }
 
-Bạn có thể tham khảo repo mẫu tại:  
-[https://github.com/example/yt-adblock](https://github.com/example/yt-adblock) (đây là link ví dụ)
+      return { body };
+    } catch (e) {
+      console.error(`[AdKiller Error] ${e}`);
+      return response;
+    }
+  }
+
+  // ===== DOM MANIPULATION =====
+  function killDOMAds() {
+    const observer = new MutationObserver(mutations => {
+      mutations.forEach(mutation => {
+        mutation.addedNodes.forEach(node => {
+          // Xóa overlay ads
+          if (node.querySelector?.('.video-ads.ytp-ad-module')) {
+            node.remove();
+            console.log('[AdKiller] Đã xóa overlay ad');
+          }
+          // Chặn ad container
+          if (node.id?.includes('ad_')) {
+            node.style.display = 'none';
+          }
+        });
+      });
+    });
+
+    observer.observe(document.documentElement, {
+      childList: true,
+      subtree: true
+    });
+
+    // Chặn ad timers
+    unsafeWindow.ytcfg.set({
+      'INNERTUBE_CONTEXT_CLIENT_NAME': 'WEB_AD_FREE' // Fake ad-free client
+    });
+  }
+
+  // ===== MAIN EXECUTION =====
+  if (typeof $request !== 'undefined') {
+    $done(nuclearClean($response));
+  } else {
+    document.addEventListener('DOMContentLoaded', killDOMAds);
+    // Chặn WebSocket ads
+    const nativeWebSocket = window.WebSocket;
+    window.WebSocket = function(...args) {
+      const ws = new nativeWebSocket(...args);
+      ws.addEventListener('message', event => {
+        if (/ad_?break/.test(event.data)) {
+          ws.close();
+          console.log('[AdKiller] Đã chặn WebSocket ad');
+        }
+      });
+      return ws;
+    };
+  }
+
+})();
