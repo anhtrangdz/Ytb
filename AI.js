@@ -1,37 +1,36 @@
 let response = JSON.parse($response.body);
 
-// Loại bỏ Shorts từ API phản hồi
-if (response.contents) {
-    let newContents = response.contents.twoColumnBrowseResultsRenderer.tabs;
-    newContents = newContents.filter(tab => !tab.tabRenderer.content?.sectionListRenderer?.contents?.some(
-        content => content.reelShelfRenderer || content.reelItemRenderer
-    ));
-    response.contents.twoColumnBrowseResultsRenderer.tabs = newContents;
-}
+// ⚡ ƯU TIÊN SERVER NHANH NHẤT ⚡
+const fastServers = [
+    "r1---sn-ab5l6n76.googlevideo.com",
+    "r2---sn-ab5szn7l.googlevideo.com",
+    "r3---sn-ab5szn7e.googlevideo.com"
+];
 
-// Xóa Shorts trong danh sách video
-if (response.onResponseReceivedActions) {
-    response.onResponseReceivedActions.forEach(action => {
-        if (action.appendContinuationItemsAction) {
-            action.appendContinuationItemsAction.continuationItems = action.appendContinuationItemsAction.continuationItems.filter(
-                item => !item.reelItemRenderer && !item.reelShelfRenderer
-            );
+// Thay thế server video bằng server nhanh nhất
+if (response.streamingData?.adaptiveFormats) {
+    response.streamingData.adaptiveFormats.forEach(format => {
+        if (format.url.includes("googlevideo.com")) {
+            let newServer = fastServers[Math.floor(Math.random() * fastServers.length)];
+            format.url = format.url.replace(/r\d+---sn-[a-z0-9]+\.googlevideo\.com/, newServer);
         }
     });
 }
 
-// Xóa Shorts trong kết quả tìm kiếm
-if (response.contents?.sectionListRenderer?.contents) {
-    response.contents.sectionListRenderer.contents = response.contents.sectionListRenderer.contents.filter(
-        content => !content.reelShelfRenderer
-    );
+// ⏩ BỎ GIỚI HẠN BUFFERING (TẢI VIDEO NHANH HƠN) ⏩
+if (response.streamingData?.maxBitrate) {
+    response.streamingData.maxBitrate = 99999999; // Mở giới hạn băng thông tối đa
 }
 
-// Tăng tốc tải video bằng DNS nhanh hơn
-const fastDNS = [
-    "8.8.8.8", // Google DNS
-    "1.1.1.1", // Cloudflare DNS
-    "9.9.9.9"  // Quad9 DNS
-];
+// 🔄 TĂNG ĐỘ ƯU TIÊN PREFETCH 🔄
+if (response.playerConfig) {
+    response.playerConfig.streaming?.bufferHealthMode = "aggressive"; // Giảm lag khi tua video
+}
 
-$done({ body: JSON.stringify(response), dns: fastDNS[Math.floor(Math.random() * fastDNS.length)] });
+// 🔒 CHẶN TRACKING, TĂNG QUYỀN RIÊNG TƯ 🔒
+if (response.responseContext) {
+    delete response.responseContext.serviceTrackingParams;
+    delete response.responseContext.webResponseContextExtensionData;
+}
+
+$done({ body: JSON.stringify(response) });
