@@ -1,87 +1,109 @@
 // ==UserScript==
-// @ScriptName      YouTube AdBlocker
+// @ScriptName      Advanced YouTube AdBlocker
 // @Match           ^https?:\/\/(www\.)?youtube\.com\/.*
 // @Type            response
 // @Requires        mitm
 // @MITM            DOMAIN-SUFFIX,youtube.com
-// @Rule            URL-REGEX,^https?:\/\/(www\.)?youtube\.com\/(get_video_info|api|watch|ad),SCRIPT,yt_adblock.js
+// @Rule            URL-REGEX,^https?:\/\/(www\.)?youtube\.com\/(get_video_info|api|watch|ad),SCRIPT,advanced_yt_adblock.js
 // ==/UserScript==
 
 /**
- * YouTube AdBlocker for Shadowrocket (Integrated Version)
- * Author: ChatGPT
+ * Advanced YouTube AdBlocker for Shadowrocket
+ * Phiên bản nâng cao với xử lý đệ quy (recursive cleaning) nhằm tìm và xóa
+ * các dữ liệu quảng cáo ở nhiều tầng của JSON.
  *
- * Mục đích:
- * - Chặn quảng cáo trên YouTube bằng cách xử lý JSON trả về và loại bỏ các dữ liệu quảng cáo.
- * - Kết hợp metadata và rule để Shadowrocket tự động áp dụng script cho các URL mục tiêu.
+ * Lưu ý:
+ * - Các trường bị xóa có thể bao gồm: adPlacements, adSlots, playerAds,
+ *   serviceTrackingParams, webResponseContextExtensionData, cùng các object chứa
+ *   "adInfoRenderer" hoặc "adRenderer".
+ * - Cẩn trọng vì việc xóa quá nhiều có thể ảnh hưởng đến một số chức năng không liên quan đến quảng cáo.
  */
 
-let body = $response.body;
-let response = {};
+(function() {
+  let body = $response.body;
+  let response = {};
 
-// Cố gắng parse JSON, nếu lỗi thì trả về dữ liệu ban đầu
-try {
-  response = JSON.parse(body);
-} catch (e) {
-  console.log("Lỗi parse JSON: " + e);
-  $done({ body });
-}
-
-// --- 1. Xóa các trường quảng cáo cấp cao ---
-const adKeys = ['adPlacements', 'adSlots', 'playerAds'];
-adKeys.forEach(key => {
-  if (response[key]) {
-    delete response[key];
+  // --- 1. Parse JSON ---
+  try {
+    response = JSON.parse(body);
+  } catch (e) {
+    console.log("Error parsing JSON: " + e);
+    $done({ body });
+    return;
   }
-});
 
-// --- 2. Xử lý nested objects chứa quảng cáo ---
-if (response.responseContext && response.responseContext.mainAppWebResponseContext) {
-  if (response.responseContext.mainAppWebResponseContext.adSlots) {
-    delete response.responseContext.mainAppWebResponseContext.adSlots;
-  }
-}
-
-// --- 3. Lọc bỏ các mục quảng cáo trong danh sách gợi ý ---
-if (
-  response.contents &&
-  response.contents.twoColumnWatchNextResults &&
-  response.contents.twoColumnWatchNextResults.secondaryResults &&
-  response.contents.twoColumnWatchNextResults.secondaryResults.secondaryResults &&
-  Array.isArray(response.contents.twoColumnWatchNextResults.secondaryResults.secondaryResults.results)
-) {
-  response.contents.twoColumnWatchNextResults.secondaryResults.secondaryResults.results = response.contents.twoColumnWatchNextResults.secondaryResults.secondaryResults.results.filter(item => {
-    return !item.adInfoRenderer;
-  });
-}
-
-// --- 4. Cải thiện tốc độ tải video: Loại bỏ tham số quảng cáo khỏi URL ---
-if (response.streamingData && Array.isArray(response.streamingData.adaptiveFormats)) {
-  response.streamingData.adaptiveFormats.forEach(format => {
-    if (format.url) {
-      format.url = format.url.replace(/&oad=[^&]*/g, "");
+  // --- 2. Hàm kiểm tra object có dấu hiệu quảng cáo ---
+  function isAdObject(obj) {
+    if (obj && typeof obj === 'object') {
+      // Nếu object chứa các key báo hiệu quảng cáo
+      const adIndicators = ["adInfoRenderer", "adRenderer"];
+      for (const indicator of adIndicators) {
+        if (obj.hasOwnProperty(indicator)) return true;
+      }
     }
-  });
-}
-
-// --- 5. Xóa các thông tin tracking không cần thiết ---
-if (response.responseContext) {
-  if (response.responseContext.serviceTrackingParams) {
-    delete response.responseContext.serviceTrackingParams;
+    return false;
   }
-  if (response.responseContext.webResponseContextExtensionData) {
-    delete response.responseContext.webResponseContextExtensionData;
-  }
-}
 
-// --- 6. Xóa các lệnh (commands) liên quan đến quảng cáo ---
-if (Array.isArray(response.commands)) {
-  response.commands = response.commands.filter(cmd => {
-    if (cmd.signalServiceEndpoint && cmd.signalServiceEndpoint.signal) {
-      return !cmd.signalServiceEndpoint.signal.toLowerCase().includes("ad");
+  // --- 3. Hàm xử lý đệ quy (recursive cleaning) ---
+  function deepClean(data) {
+    if (Array.isArray(data)) {
+      // Với mảng: lọc bỏ các phần tử được xác định là quảng cáo và đệ quy xử lý các phần tử còn lại
+      return data
+        .filter(item => {
+          // Nếu item là object và có dấu hiệu quảng cáo => loại bỏ
+          if (isAdObject(item)) return false;
+          return true;
+        })
+        .map(item => deepClean(item));
+    } else if (data !== null && typeof data === 'object') {
+      // Với object: duyệt qua từng key và xóa những key được cho là quảng cáo
+      const keysToRemove = [
+        "adPlacements",
+        "adSlots",
+        "playerAds",
+        "serviceTrackingParams",
+        "webResponseContextExtensionData"
+      ];
+      for (const key in data) {
+        if (keysToRemove.indexOf(key) > -1) {
+          delete data[key];
+        } else {
+          // Nếu giá trị là object hoặc mảng thì đệ quy
+          data[key] = deepClean(data[key]);
+        }
+      }
+      return data;
+    } else {
+      // Với giá trị nguyên thủy, trả về như cũ
+      return data;
     }
-    return true;
-  });
-}
+  }
 
-$done({ body: JSON.stringify(response) });
+  // --- 4. Xử lý đặc thù: Streaming Data ---
+  // Loại bỏ các tham số quảng cáo trong URL của streamingData.adaptiveFormats
+  if (response.streamingData && Array.isArray(response.streamingData.adaptiveFormats)) {
+    response.streamingData.adaptiveFormats.forEach(format => {
+      if (format.url) {
+        // Loại bỏ các tham số có định dạng &oad=...
+        format.url = format.url.replace(/&oad=[^&]*/g, "");
+      }
+    });
+  }
+
+  // --- 5. Xử lý đặc thù: Commands ---
+  // Loại bỏ các lệnh có chứa "ad" trong signal (như các lệnh gọi quảng cáo)
+  if (Array.isArray(response.commands)) {
+    response.commands = response.commands.filter(cmd => {
+      if (cmd.signalServiceEndpoint && cmd.signalServiceEndpoint.signal) {
+        return !cmd.signalServiceEndpoint.signal.toLowerCase().includes("ad");
+      }
+      return true;
+    });
+  }
+
+  // --- 6. Thực hiện quét đệ quy toàn bộ JSON ---
+  response = deepClean(response);
+
+  // --- 7. Trả về JSON đã xử lý ---
+  $done({ body: JSON.stringify(response) });
+})();
