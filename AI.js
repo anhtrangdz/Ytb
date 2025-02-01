@@ -1,55 +1,37 @@
-let blockShorts = {
-    "shorts": true,
-    "shortsShelf": true,
-    "shortsSection": true
-};
+let response = JSON.parse($response.body);
 
-// Chặn API liên quan đến Shorts
-let urlsToBlock = [
-    "youtube.com/youtubei/v1/browse", 
-    "youtube.com/youtubei/v1/player"
-];
+// Loại bỏ Shorts từ API phản hồi
+if (response.contents) {
+    let newContents = response.contents.twoColumnBrowseResultsRenderer.tabs;
+    newContents = newContents.filter(tab => !tab.tabRenderer.content?.sectionListRenderer?.contents?.some(
+        content => content.reelShelfRenderer || content.reelItemRenderer
+    ));
+    response.contents.twoColumnBrowseResultsRenderer.tabs = newContents;
+}
 
-// Chặn Shorts trong giao diện YouTube
-let hideShortsElements = () => {
-    let shortsSelectors = [
-        "ytd-rich-section-renderer", // Shorts trên trang chủ
-        "ytd-reel-shelf-renderer",   // Shorts trong kênh
-        "ytd-reel-item-renderer",    // Shorts trong danh sách video
-        "ytd-video-renderer:has(a[href*='/shorts/'])" // Shorts trong tìm kiếm
-    ];
-    
-    shortsSelectors.forEach(selector => {
-        document.querySelectorAll(selector).forEach(el => el.remove());
-    });
-};
-
-// Ưu tiên server nhanh hơn
-let prioritizeFastServers = () => {
-    let fastCDN = [
-        "r2---sn-abcdefgh.googlevideo.com", 
-        "r3---sn-ijklmnop.googlevideo.com"
-    ];
-    
-    let videoElements = document.querySelectorAll("video");
-    videoElements.forEach(video => {
-        if (video.src.includes("googlevideo.com")) {
-            let newSrc = video.src.replace(/r\d+---sn-[a-z0-9]+\.googlevideo\.com/, fastCDN[Math.floor(Math.random() * fastCDN.length)]);
-            video.src = newSrc;
-            video.load();
+// Xóa Shorts trong danh sách video
+if (response.onResponseReceivedActions) {
+    response.onResponseReceivedActions.forEach(action => {
+        if (action.appendContinuationItemsAction) {
+            action.appendContinuationItemsAction.continuationItems = action.appendContinuationItemsAction.continuationItems.filter(
+                item => !item.reelItemRenderer && !item.reelShelfRenderer
+            );
         }
     });
-};
+}
 
-// Chạy script khi trang load
-window.addEventListener("load", () => {
-    hideShortsElements();
-    prioritizeFastServers();
-});
+// Xóa Shorts trong kết quả tìm kiếm
+if (response.contents?.sectionListRenderer?.contents) {
+    response.contents.sectionListRenderer.contents = response.contents.sectionListRenderer.contents.filter(
+        content => !content.reelShelfRenderer
+    );
+}
 
-// Chạy script khi giao diện thay đổi (SPA YouTube)
-let observer = new MutationObserver(() => {
-    hideShortsElements();
-    prioritizeFastServers();
-});
-observer.observe(document.body, { childList: true, subtree: true });
+// Tăng tốc tải video bằng DNS nhanh hơn
+const fastDNS = [
+    "8.8.8.8", // Google DNS
+    "1.1.1.1", // Cloudflare DNS
+    "9.9.9.9"  // Quad9 DNS
+];
+
+$done({ body: JSON.stringify(response), dns: fastDNS[Math.floor(Math.random() * fastDNS.length)] });
