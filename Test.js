@@ -1,74 +1,74 @@
 // ==UserScript==
-// @ScriptName      Advanced YouTube AdBlocker v2
+// @ScriptName      Advanced YouTube AdBlocker (Shadowrocket)
 // @Match           ^https?:\/\/(www\.)?youtube\.com\/.*
 // @Type            response
 // @Requires        mitm
 // @MITM            DOMAIN-SUFFIX,youtube.com
-// @Rule            URL-REGEX,^https?:\/\/(www\.)?youtube\.com\/(get_video_info|api|watch|ad),SCRIPT,advanced_yt_adblock_v2.js
+// @Rule            URL-REGEX,^https?:\/\/(www\.)?youtube\.com\/(get_video_info|api|watch|ad),SCRIPT,advanced_yt_adblock.js
 // ==/UserScript==
 
+/**
+ * Advanced YouTube AdBlocker for Shadowrocket
+ * Cải tiến để xử lý tốt hơn việc loại bỏ quảng cáo ngay khi bấm vào video.
+ */
+
 (function() {
-    let body = $response.body;
-    let response = {};
+  let body = $response.body;
+  let response = {};
 
-    try {
-        response = JSON.parse(body);
-    } catch (e) {
-        console.log("Error parsing JSON: " + e);
-        $done({ body });
-        return;
-    }
+  try {
+    response = JSON.parse(body);
+  } catch (e) {
+    console.log("🚨 Lỗi khi parse JSON: " + e);
+    $done({ body });
+    return;
+  }
 
-    // Chặn mọi request liên quan đến quảng cáo ngay từ đầu
-    if ($request.url.includes("ad") || $request.url.includes("get_midroll_info") || $request.url.includes("pagead/aclk")) {
-        $done({ response: { status: 204, body: "" } });
-        return;
-    }
+  // 🛑 Các key liên quan đến quảng cáo cần loại bỏ
+  const adKeys = [
+    "adPlacements",
+    "adBreaks",
+    "playerAds",
+    "adSignals",
+    "serviceTrackingParams",
+    "adServingData",
+    "adInfoRenderer",
+    "adRenderer",
+    "adSlotLoggingData",
+    "midrollAdBreak",
+    "adLayoutLoggingData"
+  ];
 
-    // Trả về dữ liệu giả thay vì xóa hoàn toàn (tránh lỗi tải video)
-    if ($request.url.includes("get_midroll_info")) {
-        let fakeResponse = { adPlacements: [], playerAds: [], adBreaks: [] };
-        $done({ body: JSON.stringify(fakeResponse) });
-        return;
-    }
-
-    // Xóa dữ liệu quảng cáo ngay khi video bắt đầu
-    const adKeys = ["adPlacements", "adSlots", "playerAds", "adBreaks", "adSignals", "serviceTrackingParams", "adServingData"];
-    
-    function deepClean(obj) {
-        if (Array.isArray(obj)) {
-            return obj.map(deepClean).filter(item => item !== null);
-        } else if (obj && typeof obj === 'object') {
-            for (const key in obj) {
-                if (adKeys.includes(key) || key.toLowerCase().includes("ad")) {
-                    delete obj[key];
-                } else {
-                    obj[key] = deepClean(obj[key]);
-                }
-            }
-            return obj;
+  function deepClean(obj) {
+    if (Array.isArray(obj)) {
+      return obj.filter(item => !isAdObject(item)).map(deepClean);
+    } else if (obj !== null && typeof obj === "object") {
+      for (const key in obj) {
+        if (adKeys.includes(key) || key.toLowerCase().includes("ad")) {
+          delete obj[key];
+        } else {
+          obj[key] = deepClean(obj[key]);
         }
-        return obj;
+      }
     }
+    return obj;
+  }
 
-    if (response.playerResponse) {
-        response.playerResponse = deepClean(response.playerResponse);
-    }
+  function isAdObject(obj) {
+    return obj && typeof obj === "object" && Object.keys(obj).some(key => adKeys.includes(key) || key.toLowerCase().includes("ad"));
+  }
 
-    // Loại bỏ các overlay ads (biểu ngữ trong video)
-    if (response.overlay) {
-        delete response.overlay;
-    }
+  // 🧹 Làm sạch dữ liệu quảng cáo
+  response = deepClean(response);
 
-    // Bỏ qua quảng cáo nếu có xuất hiện
-    setInterval(() => {
-        let skipButton = document.querySelector(".ytp-ad-skip-button, .ytp-ad-overlay-close-button");
-        if (skipButton) {
-            skipButton.click();
-            console.log("Đã tự động bỏ qua quảng cáo!");
-        }
-    }, 500);
+  // 🎯 Ngăn YouTube tải lại quảng cáo giữa video
+  if (response.streamingData && Array.isArray(response.streamingData.adaptiveFormats)) {
+    response.streamingData.adaptiveFormats.forEach(format => {
+      if (format.url) {
+        format.url = format.url.replace(/&oad=[^&]*/g, ""); // Loại bỏ tham số quảng cáo trong URL video
+      }
+    });
+  }
 
-    // Trả về JSON đã xử lý
-    $done({ body: JSON.stringify(response) });
+  $done({ body: JSON.stringify(response) });
 })();
