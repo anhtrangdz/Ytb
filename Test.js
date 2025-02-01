@@ -1,74 +1,81 @@
 // ==UserScript==
-// @ScriptName      Advanced YouTube AdBlocker (Shadowrocket)
+// @ScriptName      Ultimate YouTube AdBlocker (Shadowrocket Optimized)
 // @Match           ^https?:\/\/(www\.)?youtube\.com\/.*
 // @Type            response
 // @Requires        mitm
 // @MITM            DOMAIN-SUFFIX,youtube.com
-// @Rule            URL-REGEX,^https?:\/\/(www\.)?youtube\.com\/(get_video_info|api|watch|ad),SCRIPT,advanced_yt_adblock.js
+// @Rule            URL-REGEX,^https?:\/\/(www\.)?youtube\.com\/(get_video_info|api|watch|ad),SCRIPT,ultimate_yt_adblock.js
 // ==/UserScript==
 
 /**
- * Advanced YouTube AdBlocker for Shadowrocket
- * Cải tiến để xử lý tốt hơn việc loại bỏ quảng cáo ngay khi bấm vào video.
+ * Ultimate YouTube AdBlocker for Shadowrocket (Optimized)
+ * 🚀 Chặn quảng cáo hoàn toàn ở cấp độ mạng.
  */
 
 (function() {
-  let body = $response.body;
-  let response = {};
+    let body = $response.body;
+    let response = {};
 
-  try {
-    response = JSON.parse(body);
-  } catch (e) {
-    console.log("🚨 Lỗi khi parse JSON: " + e);
-    $done({ body });
-    return;
-  }
-
-  // 🛑 Các key liên quan đến quảng cáo cần loại bỏ
-  const adKeys = [
-    "adPlacements",
-    "adBreaks",
-    "playerAds",
-    "adSignals",
-    "serviceTrackingParams",
-    "adServingData",
-    "adInfoRenderer",
-    "adRenderer",
-    "adSlotLoggingData",
-    "midrollAdBreak",
-    "adLayoutLoggingData"
-  ];
-
-  function deepClean(obj) {
-    if (Array.isArray(obj)) {
-      return obj.filter(item => !isAdObject(item)).map(deepClean);
-    } else if (obj !== null && typeof obj === "object") {
-      for (const key in obj) {
-        if (adKeys.includes(key) || key.toLowerCase().includes("ad")) {
-          delete obj[key];
-        } else {
-          obj[key] = deepClean(obj[key]);
-        }
-      }
+    try {
+        response = JSON.parse(body);
+    } catch (e) {
+        console.log("🚨 Lỗi khi parse JSON: " + e);
+        $done({ body });
+        return;
     }
-    return obj;
-  }
 
-  function isAdObject(obj) {
-    return obj && typeof obj === "object" && Object.keys(obj).some(key => adKeys.includes(key) || key.toLowerCase().includes("ad"));
-  }
+    // 📌 Danh sách các key liên quan đến quảng cáo
+    const blockedAds = [
+        "adPlacements",
+        "adBreaks",
+        "playerAds",
+        "adSignals",
+        "serviceTrackingParams",
+        "adServingData",
+        "adInfoRenderer",
+        "adRenderer",
+        "adSlotLoggingData",
+        "midrollAdBreak",
+        "adLayoutLoggingData"
+    ];
 
-  // 🧹 Làm sạch dữ liệu quảng cáo
-  response = deepClean(response);
+    // 🛑 Hàm kiểm tra và xóa quảng cáo
+    function detectAndBlockAds(obj) {
+        if (Array.isArray(obj)) {
+            return obj.filter(item => !isAd(item)).map(detectAndBlockAds);
+        } else if (obj !== null && typeof obj === "object") {
+            for (const key in obj) {
+                if (isAdKey(key)) {
+                    delete obj[key];
+                } else {
+                    obj[key] = detectAndBlockAds(obj[key]);
+                }
+            }
+        }
+        return obj;
+    }
 
-  // 🎯 Ngăn YouTube tải lại quảng cáo giữa video
-  if (response.streamingData && Array.isArray(response.streamingData.adaptiveFormats)) {
-    response.streamingData.adaptiveFormats.forEach(format => {
-      if (format.url) {
-        format.url = format.url.replace(/&oad=[^&]*/g, ""); // Loại bỏ tham số quảng cáo trong URL video
-      }
-    });
-  }
+    // 🛑 Kiểm tra xem key có phải quảng cáo không
+    function isAdKey(key) {
+        return blockedAds.includes(key) || key.toLowerCase().includes("ad");
+    }
 
-  $done({ body: JSON.stringify(response) });
+    function isAd(obj) {
+        return obj && typeof obj === "object" && Object.keys(obj).some(isAdKey);
+    }
+
+    // 📌 Xử lý JSON: Chặn quảng cáo dựa trên danh sách
+    response = detectAndBlockAds(response);
+
+    // 🔄 Xóa quảng cáo trong URL video (tránh pre-roll ads)
+    if (response.streamingData && Array.isArray(response.streamingData.adaptiveFormats)) {
+        response.streamingData.adaptiveFormats.forEach(format => {
+            if (format.url) {
+                format.url = format.url.replace(/&oad=[^&]*/g, ""); // Xóa tham số quảng cáo
+            }
+        });
+    }
+
+    console.log("✅ Ultimate YouTube AdBlocker đã xử lý xong!");
+    $done({ body: JSON.stringify(response) });
 })();
