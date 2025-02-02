@@ -1,37 +1,41 @@
-var body = $response.body;
-var obj = JSON.parse(body);
+// ==UserScript==
+// @ScriptName      CapCut Pro Unlocker for Shadowrocket
+// @Match           ^https?:\/\/.*capcut.*\/.*
+// @Type            response
+// @Requires        mitm
+// @MITM            DOMAIN-SUFFIX,capcut.com
+// @Rule            URL-REGEX,^https?:\/\/.*capcut.*\/(subscription|vip|membership|paywall),SCRIPT,capcut_pro_unlock.js
+// ==/UserScript==
 
-// Chặn quảng cáo bằng cách loại bỏ các key liên quan đến ads
-const adKeys = ["ad", "ads", "advertisement", "ad_data", "ad_info"];
-adKeys.forEach(key => {
-    if (obj.hasOwnProperty(key)) delete obj[key];
-});
+(function() {
+  let body = $response.body;
+  let response = {};
 
-// Xóa quảng cáo trong danh sách dữ liệu
-if (obj.data && Array.isArray(obj.data)) {
-    obj.data = obj.data.filter(item => !item.hasOwnProperty("ad"));
-}
+  try {
+    response = JSON.parse(body);
+  } catch (e) {
+    console.log("JSON parsing error: " + e);
+    $done({ body });
+    return;
+  }
 
-// Mở khóa CapCut Pro
-if (obj.hasOwnProperty("subscription")) {
-    obj.subscription = {
-        "plan": "pro",
-        "status": "active",
-        "expires_at": "2099-12-31T23:59:59Z"
-    };
-}
+  // Mở khóa CapCut Pro
+  response.subscription = {
+    "status": "active",
+    "plan": "pro",
+    "expires": "2099-12-31T23:59:59Z",
+    "features": ["no_ads", "hd_export", "premium_assets", "pro_tools"]
+  };
 
-// Mở khóa tính năng CapCut Pro
-const proFeatures = [
-    "no_watermark", "export_hd", "premium_effects",
-    "premium_transitions", "premium_fonts", "premium_music"
-];
+  // Xóa quảng cáo
+  if (response.ads) {
+    response.ads = [];
+  }
 
-if (!obj.features) obj.features = [];
-proFeatures.forEach(feature => {
-    obj.features.push({ "name": feature, "enabled": true });
-});
+  if (response.features) {
+    response.features.forEach(feature => feature.enabled = true);
+  }
 
-// Trả về dữ liệu đã chỉnh sửa
-body = JSON.stringify(obj);
-$done({body});
+  body = JSON.stringify(response);
+  $done({ body });
+})();
